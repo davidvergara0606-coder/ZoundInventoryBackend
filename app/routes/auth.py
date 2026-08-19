@@ -175,7 +175,6 @@ def obtener_productos():
 
 @productos_bp.route('/productos/alertas', methods=['GET'])
 def obtener_alertas_stock():
-
     productos = Producto.query.filter(Producto.stock_actual <= Producto.stock_minimo).all()
     resultado = [{
         "id_producto": p.id_producto,
@@ -216,6 +215,42 @@ def eliminar_producto(id_producto):
 @productos_bp.route('/categorias', methods=['GET'])
 def obtener_categorias():
     return jsonify([{"id_categoria": 1, "nombre": "General"}]), 200
+
+
+# --- NUEVAS RUTAS DE ENTRADA Y SALIDA ESPECÍFICAS ---
+
+@productos_bp.route('/productos/entrada', methods=['POST'])
+def registrar_entrada():
+    data = request.get_json()
+    try:
+        producto = Producto.query.get_or_404(data.get('id_producto'))
+        cantidad = int(data.get('cantidad'))
+        
+        producto.stock_actual += cantidad
+        db.session.commit()
+        
+        return jsonify({"mensaje": "Entrada registrada con éxito"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"mensaje": f"Error al registrar entrada: {str(e)}"}), 400
+
+@productos_bp.route('/productos/salida', methods=['POST'])
+def registrar_salida():
+    data = request.get_json()
+    try:
+        producto = Producto.query.get_or_404(data.get('id_producto'))
+        cantidad = int(data.get('cantidad'))
+        
+        if producto.stock_actual < cantidad:
+            return jsonify({"mensaje": "Stock insuficiente para la salida"}), 400
+            
+        producto.stock_actual -= cantidad
+        db.session.commit()
+        
+        return jsonify({"mensaje": "Salida registrada con éxito"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"mensaje": f"Error al registrar salida: {str(e)}"}), 400
 
 
 @productos_bp.route('/movimientos', methods=['POST'])
