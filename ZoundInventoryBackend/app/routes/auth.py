@@ -3,6 +3,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from app.database.database import db
 from app.models.usuario import Usuario
 from app.models.producto import Producto
+from app.models.categoria import Categoria
+from app.models.garantia import Garantia
+from app.models.devolucion import Devolucion
 
 auth_bp = Blueprint('auth', __name__)
 productos_bp = Blueprint('productos_bp', __name__)
@@ -10,39 +13,12 @@ productos_bp = Blueprint('productos_bp', __name__)
 @auth_bp.route('/registro', methods=['POST'])
 def registro():
     data = request.get_json()
-    
+
     if Usuario.query.filter_by(documento=data.get('documento')).first():
         return jsonify({"mensaje": "El documento ya está registrado"}), 400
-    
-    password_encriptada = generate_password_hash(data.get('password'))
-    
-    nuevo_usuario = Usuario(
-        primer_nombre=data.get('primer_nombre'),
-        primer_apellido=data.get('primer_apellido'),
-        tipo_documento=data.get('tipo_documento'),
-        documento=data.get('documento'),
-        correo=data.get('correo'),
-        password=password_encriptada,
-        id_rol=data.get('id_rol') 
-    )
-
-    db.session.add(nuevo_usuario)
-    db.session.commit()
-    
-    return jsonify({"mensaje": "Usuario creado exitosamente"}), 201
-
-@auth_bp.route('/crear-usuario', methods=['POST'])
-def crear_usuario_por_admin():
-    data = request.get_json()
-    
-    if Usuario.query.filter_by(documento=data.get('documento')).first():
-        return jsonify({"mensaje": "El documento ya está registrado"}), 400
-    
-    if Usuario.query.filter_by(correo=data.get('correo')).first():
-        return jsonify({"mensaje": "El correo ya está registrado"}), 400
 
     password_encriptada = generate_password_hash(data.get('password'))
-    
+
     nuevo_usuario = Usuario(
         primer_nombre=data.get('primer_nombre'),
         primer_apellido=data.get('primer_apellido'),
@@ -55,7 +31,34 @@ def crear_usuario_por_admin():
 
     db.session.add(nuevo_usuario)
     db.session.commit()
-    
+
+    return jsonify({"mensaje": "Usuario creado exitosamente"}), 201
+
+@auth_bp.route('/crear-usuario', methods=['POST'])
+def crear_usuario_por_admin():
+    data = request.get_json()
+
+    if Usuario.query.filter_by(documento=data.get('documento')).first():
+        return jsonify({"mensaje": "El documento ya está registrado"}), 400
+
+    if Usuario.query.filter_by(correo=data.get('correo')).first():
+        return jsonify({"mensaje": "El correo ya está registrado"}), 400
+
+    password_encriptada = generate_password_hash(data.get('password'))
+
+    nuevo_usuario = Usuario(
+        primer_nombre=data.get('primer_nombre'),
+        primer_apellido=data.get('primer_apellido'),
+        tipo_documento=data.get('tipo_documento'),
+        documento=data.get('documento'),
+        correo=data.get('correo'),
+        password=password_encriptada,
+        id_rol=data.get('id_rol')
+    )
+
+    db.session.add(nuevo_usuario)
+    db.session.commit()
+
     return jsonify({"mensaje": "Usuario creado exitosamente por el Administrador"}), 201
 
 @auth_bp.route('/login', methods=['POST'])
@@ -69,11 +72,11 @@ def login():
     if usuario and check_password_hash(usuario.password, password):
         return jsonify({
             "mensaje": "Login exitoso",
-            "id": usuario.documento,  
+            "id": usuario.documento,
             "usuario": usuario.primer_nombre,
-            "id_rol": str(usuario.id_rol) 
+            "id_rol": str(usuario.id_rol)
         }), 200
-    
+
     return jsonify({"mensaje": "Credenciales inválidas"}), 401
 
 @auth_bp.route('/perfil/<documento>', methods=['GET'])
@@ -81,7 +84,7 @@ def obtener_perfil(documento):
     usuario = Usuario.query.filter_by(documento=documento).first()
     if not usuario:
         return jsonify({"mensaje": "Usuario no encontrado"}), 404
-    
+
     return jsonify({
         "primer_nombre": usuario.primer_nombre,
         "primer_apellido": usuario.primer_apellido,
@@ -94,7 +97,7 @@ def obtener_perfil(documento):
 def actualizar_perfil(documento):
     data = request.get_json()
     usuario = Usuario.query.filter_by(documento=documento).first()
-    
+
     if not usuario:
         return jsonify({"mensaje": "Usuario no encontrado"}), 404
 
@@ -102,7 +105,7 @@ def actualizar_perfil(documento):
         usuario.primer_nombre = data['primer_nombre']
     if 'correo' in data:
         usuario.correo = data['correo']
-    
+
     password_plana = data.get('password')
     if password_plana and password_plana.strip() != "":
         usuario.password = generate_password_hash(password_plana)
@@ -158,30 +161,27 @@ def crear_producto():
 def obtener_productos():
     productos = Producto.query.all()
     resultado = []
-
     for p in productos:
         resultado.append({
             "id_producto": p.id_producto,
-            "codigo": f"P{p.id_producto:03d}", 
+            "codigo": f"P{p.id_producto:03d}",
             "nombre": p.nombre,
             "stock_actual": p.stock_actual,
             "stock_minimo": p.stock_minimo,
             "id_categoria": p.id_categoria,
-            "categoria": "General" 
+            "categoria": p.categoria.nombre if p.categoria else "Sin categoría"
         })
-
     return jsonify(resultado), 200
 
 
 @productos_bp.route('/productos/alertas', methods=['GET'])
 def obtener_alertas_stock():
-
     productos = Producto.query.filter(Producto.stock_actual <= Producto.stock_minimo).all()
     resultado = [{
         "id_producto": p.id_producto,
         "codigo": f"P{p.id_producto:03d}",
         "nombre": p.nombre,
-        "categoria": "General",
+        "categoria": p.categoria.nombre if p.categoria else "Sin categoría",
         "stock_actual": p.stock_actual,
         "stock_minimo": p.stock_minimo
     } for p in productos]
@@ -215,17 +215,52 @@ def eliminar_producto(id_producto):
 
 @productos_bp.route('/categorias', methods=['GET'])
 def obtener_categorias():
-    return jsonify([{"id_categoria": 1, "nombre": "General"}]), 200
+    categorias = Categoria.query.all()
+    return jsonify([{"id_categoria": c.id_categoria, "nombre": c.nombre} for c in categorias]), 200
+
+
+@productos_bp.route('/productos/entrada', methods=['POST'])
+def registrar_entrada():
+    data = request.get_json()
+    try:
+        producto = Producto.query.get_or_404(data.get('id_producto'))
+        cantidad = int(data.get('cantidad'))
+
+        producto.stock_actual += cantidad
+        db.session.commit()
+
+        return jsonify({"mensaje": "Entrada registrada con éxito"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"mensaje": f"Error al registrar entrada: {str(e)}"}), 400
+
+@productos_bp.route('/productos/salida', methods=['POST'])
+def registrar_salida():
+    data = request.get_json()
+    try:
+        producto = Producto.query.get_or_404(data.get('id_producto'))
+        cantidad = int(data.get('cantidad'))
+
+        if producto.stock_actual < cantidad:
+            return jsonify({"mensaje": "Stock insuficiente para la salida"}), 400
+
+        producto.stock_actual -= cantidad
+        db.session.commit()
+
+        return jsonify({"mensaje": "Salida registrada con éxito"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"mensaje": f"Error al registrar salida: {str(e)}"}), 400
 
 
 @productos_bp.route('/movimientos', methods=['POST'])
 def registrar_movimiento():
     data = request.get_json()
-    
+
     try:
         producto = Producto.query.get_or_404(data.get('id_producto'))
         cantidad = int(data.get('cantidad'))
-        
+
         tipo = data.get('tipo_movimiento')
         if tipo == 'entrada':
             producto.stock_actual += cantidad
@@ -235,7 +270,7 @@ def registrar_movimiento():
             producto.stock_actual -= cantidad
         else:
             return jsonify({"mensaje": "Tipo de movimiento inválido"}), 400
-            
+
         db.session.commit()
         return jsonify({"mensaje": "Movimiento registrado con éxito"}), 201
     except Exception as e:
@@ -243,17 +278,70 @@ def registrar_movimiento():
         return jsonify({"mensaje": f"Error al registrar movimiento: {str(e)}"}), 400
 
 
+@productos_bp.route('/garantias', methods=['POST'])
+def registrar_garantia():
+    data = request.get_json()
+    observacion = (data.get('observacion') or '').strip()
+    if not observacion:
+        return jsonify({"mensaje": "La observación es obligatoria"}), 400
+    try:
+        producto = Producto.query.get_or_404(data.get('id_producto'))
+        nueva = Garantia(id_producto=producto.id_producto, observacion=observacion)
+        db.session.add(nueva)
+        db.session.commit()
+        return jsonify({"mensaje": "Garantía registrada con éxito"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"mensaje": f"Error al registrar garantía: {str(e)}"}), 400
+
+
+@productos_bp.route('/devoluciones', methods=['POST'])
+def registrar_devolucion():
+    data = request.get_json()
+    observacion = (data.get('observacion') or '').strip()
+    if not observacion:
+        return jsonify({"mensaje": "La observación es obligatoria"}), 400
+    try:
+        producto = Producto.query.get_or_404(data.get('id_producto'))
+        nueva = Devolucion(id_producto=producto.id_producto, observacion=observacion)
+        db.session.add(nueva)
+        db.session.commit()
+        return jsonify({"mensaje": "Devolución registrada con éxito"}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"mensaje": f"Error al registrar devolución: {str(e)}"}), 400
+
+
 @productos_bp.route('/reportes/<tipo>', methods=['GET'])
 def obtener_reportes(tipo):
-    productos = Producto.query.all()
-    
     if tipo == 'stock':
-        resultado = [{"codigo": f"P{p.id_producto:03d}", "nombre": p.nombre, "categoria": "General", "stock": p.stock_actual} for p in productos]
+        productos = Producto.query.all()
+        resultado = [{
+            "codigo": f"P{p.id_producto:03d}",
+            "nombre": p.nombre,
+            "categoria": p.categoria.nombre if p.categoria else "Sin categoría",
+            "stock": p.stock_actual
+        } for p in productos]
+
     elif tipo == 'garantia':
-        resultado = [{"codigo": "P012", "nombre": "Manos libres", "categoria": "Periférico", "observacion": "Garantía de fábrica activa"}]
+        garantias = Garantia.query.order_by(Garantia.fecha.desc()).all()
+        resultado = [{
+            "codigo": f"P{g.id_producto:03d}",
+            "nombre": g.producto.nombre if g.producto else "Producto eliminado",
+            "categoria": g.producto.categoria.nombre if g.producto and g.producto.categoria else "Sin categoría",
+            "observacion": g.observacion
+        } for g in garantias]
+
     elif tipo == 'devoluciones':
-        resultado = [{"codigo": "P005", "nombre": "Marshall Acton III", "categoria": "Hablante", "observacion": "Devolución por cambio de referencia"}]
+        devoluciones = Devolucion.query.order_by(Devolucion.fecha.desc()).all()
+        resultado = [{
+            "codigo": f"P{d.id_producto:03d}",
+            "nombre": d.producto.nombre if d.producto else "Producto eliminado",
+            "categoria": d.producto.categoria.nombre if d.producto and d.producto.categoria else "Sin categoría",
+            "observacion": d.observacion
+        } for d in devoluciones]
+
     else:
         resultado = []
-        
+
     return jsonify(resultado), 200

@@ -7,3 +7,5 @@ from app.models.producto import Producto
 from app.models.proveedor import Proveedor
 from app.models.movimiento import Movimiento
 from app.models.alerta import Alerta
+from app.models.garantia import Garantia
+from app.models.devolucion import Devolucion
