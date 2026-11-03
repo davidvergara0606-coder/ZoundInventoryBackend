@@ -13,9 +13,26 @@ productos_bp = Blueprint('productos_bp', __name__)
 @auth_bp.route('/registro', methods=['POST'])
 def registro():
     data = request.get_json()
+
     if Usuario.query.filter_by(documento=data.get('documento')).first():
         return jsonify({"mensaje": "El documento ya está registrado"}), 400
-    password_encriptada = generate_password_hash(data.get('password'))
+
+    if  not data.get('password'):
+            return jsonify({"mensaje": "No se ha digitado el password"}), 400
+
+    if len(data.get("password", "")) < 8:
+       return jsonify({"mensaje": "password muy corta"}), 400
+
+    if len(data.get("password", "")) > 64:
+       return jsonify({"mensaje": "password muy larga"}), 400
+
+    try:
+        password_encriptada = generate_password_hash(data.get('password'))
+    except:
+        return jsonify({"mensaje": "No se ha digitado el password"}), 400
+
+    
+
     nuevo_usuario = Usuario(
         primer_nombre=data.get('primer_nombre'),
         primer_apellido=data.get('primer_apellido'),
@@ -25,8 +42,10 @@ def registro():
         password=password_encriptada,
         id_rol=data.get('id_rol')
     )
+
     db.session.add(nuevo_usuario)
     db.session.commit()
+
     return jsonify({"mensaje": "Usuario creado exitosamente"}), 201
 
 @auth_bp.route('/crear-usuario', methods=['POST'])

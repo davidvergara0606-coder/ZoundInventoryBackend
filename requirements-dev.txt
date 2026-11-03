@@ -1,0 +1,4 @@
+# Dependencias para correr las pruebas (se suman a las del proyecto)
+-r requeriments.txt
+pytest>=8
+pytest-cov>=5
